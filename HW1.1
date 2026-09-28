@@ -1,0 +1,170 @@
+/*********************************************************************************************************//**
+ * @file    GPIO/InputOutput/main.c
+ * @version $Rev:: 5675         $
+ * @date    $Date:: 2021-12-23 #$
+ * @brief   Main program.
+ *************************************************************************************************************
+ * @attention
+ *
+ * Firmware Disclaimer Information
+ *
+ * 1. The customer hereby acknowledges and agrees that the program technical documentation, including the
+ *    code, which is supplied by Holtek Semiconductor Inc., (hereinafter referred to as "HOLTEK") is the
+ *    proprietary and confidential intellectual property of HOLTEK, and is protected by copyright law and
+ *    other intellectual property laws.
+ *
+ * 2. The customer hereby acknowledges and agrees that the program technical documentation, including the
+ *    code, is confidential information belonging to HOLTEK, and must not be disclosed to any third parties
+ *    other than HOLTEK and the customer.
+ *
+ * 3. The program technical documentation, including the code, is provided "as is" and for customer reference
+ *    only. After delivery by HOLTEK, the customer shall use the program technical documentation, including
+ *    the code, at their own risk. HOLTEK disclaims any expressed, implied or statutory warranties, including
+ *    the warranties of merchantability, satisfactory quality and fitness for a particular purpose.
+ *
+ * <h2><center>Copyright (C) Holtek Semiconductor Inc. All rights reserved</center></h2>
+ ************************************************************************************************************/
+
+/* Includes ------------------------------------------------------------------------------------------------*/
+#include "ht32.h"
+#include "ht32_board.h"
+#include "ht32_board_config.h"
+
+/** @addtogroup HT32_Series_Peripheral_Examples HT32 Peripheral Examples
+  * @{
+  */
+
+/** @addtogroup GPIO_Examples GPIO
+  * @{
+  */
+
+/** @addtogroup InputOutput
+  * @{
+  */
+
+/* Private function prototypes -----------------------------------------------------------------------------*/
+void CKCU_Configuration(void);
+void GPIO_OUT_Configuration(void);
+void GPIO_MainRoutine(void);
+static void _Delay(vu32 count);
+
+/* Global functions ----------------------------------------------------------------------------------------*/
+/*********************************************************************************************************//**
+ * @brief   Main program.
+ * @retval None
+ * @note At this stage the microcontroller clock setting should has already been configured.
+ ***********************************************************************************************************/
+int main(void)
+{
+    /* 系統相關時脈設定 */
+    CKCU_Configuration();    
+
+    /* 設定 PC14, PC15, PB0 為輸出功能 */
+    GPIO_OUT_Configuration();
+
+    /* 進入無窮迴圈執行不同頻率閃爍 */
+    while (1)
+    {
+        GPIO_MainRoutine();
+    }
+}
+
+/*********************************************************************************************************//**
+ * @brief   Configure the system clocks.
+ * @retval None
+ ***********************************************************************************************************/
+void CKCU_Configuration(void)
+{
+    CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
+
+    /* 開啟 Port B 與 Port C 的時脈 */
+    CKCUClock.Bit.PC = 1;
+    CKCUClock.Bit.PB = 1;
+    CKCUClock.Bit.AFIO = 1;
+    CKCU_PeripClockConfig(CKCUClock, ENABLE);
+}
+
+/*********************************************************************************************************//**
+ * @brief   Configure the GPIO ports for output (PC14, PC15, PB0).
+ * @retval None
+ ***********************************************************************************************************/
+void GPIO_OUT_Configuration(void)
+{
+    /* 設定 AFIO 模式為一般 GPIO */
+    AFIO_GPxConfig(GPIO_PC, AFIO_PIN_14, AFIO_FUN_GPIO);
+    AFIO_GPxConfig(GPIO_PC, AFIO_PIN_15, AFIO_FUN_GPIO);
+    AFIO_GPxConfig(GPIO_PB, AFIO_PIN_0,  AFIO_FUN_GPIO);
+
+    /* 設定 GPIO 方向為輸出模式 */
+    GPIO_DirectionConfig(HT_GPIOC, GPIO_PIN_14, GPIO_DIR_OUT);
+    GPIO_DirectionConfig(HT_GPIOC, GPIO_PIN_15, GPIO_DIR_OUT);
+    GPIO_DirectionConfig(HT_GPIOB, GPIO_PIN_0,  GPIO_DIR_OUT);
+}
+
+/*********************************************************************************************************//**
+ * @brief   GPIO Main Routine.
+ * @retval None
+ ***********************************************************************************************************/
+void GPIO_MainRoutine(void)
+{
+    static uint32_t counter = 0;
+    static uint8_t state14 = 0;
+    static uint8_t state15 = 0;
+    static uint8_t state0  = 0;
+    
+    counter++;
+
+    /* PC14 (LED0): 頻率最快 (每 10 個單位切換一次) */
+    if (counter % 10 == 0) {
+        state14 = !state14;
+        GPIO_WriteOutBits(HT_GPIOC, GPIO_PIN_14, state14 ? SET : RESET);
+    }
+
+    /* PC15 (LED1): 頻率中等 (每 25 個單位切換一次) */
+    if (counter % 25 == 0) {
+        state15 = !state15;
+        GPIO_WriteOutBits(HT_GPIOC, GPIO_PIN_15, state15 ? SET : RESET);
+    }
+
+    /* PB0 (LED2): 頻率最慢 (每 50 個單位切換一次) */
+    if (counter % 50 == 0) {
+        state0 = !state0;
+        GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_0, state0 ? SET : RESET);
+    }
+
+    /* 基礎微小延遲 (控制整體迴圈基準時間) */
+    _Delay(10);
+}
+
+#if (HT32_LIB_DEBUG == 1)
+/*********************************************************************************************************//**
+ * @brief   Report both the error name of the source file and the source line number.
+ * @param   filename: pointer to the source file name.
+ * @param   uline: error line source number.
+ * @retval None
+ ***********************************************************************************************************/
+void assert_error(u8* filename, u32 uline)
+{
+    while (1)
+    {
+    }
+}
+#endif
+
+/**
+ * @}
+ */
+static void _Delay(vu32 count)
+{
+    vu32 i;
+    for(i = 0; i < 5000 * count; i++)
+    {
+    }
+}
+/**
+ * @}
+ */
+
+/**
+ * @}
+ */
