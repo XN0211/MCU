@@ -1,0 +1,162 @@
+#include "ht32.h"
+#include "ht32_board.h"
+
+/* 4x4 Keypad Matrix Output (4~7) and Input (0~3) Pin Declarations (All on GPIOA) */
+const u16 OutputPins[4] = {GPIO_PIN_4, GPIO_PIN_5, GPIO_PIN_6, GPIO_PIN_7};
+const u16 InputPins[4]  = {GPIO_PIN_0, GPIO_PIN_1, GPIO_PIN_2, GPIO_PIN_3};
+
+/* 7-Segment Display Segments A~G Mapped to PB0 ~ PB6 */
+const u16 SegPins[7] = {
+  GPIO_PIN_0, // A -> PB0
+  GPIO_PIN_1, // B -> PB1
+  GPIO_PIN_2, // C -> PB2
+  GPIO_PIN_3, // D -> PB3
+  GPIO_PIN_4, // E -> PB4
+  GPIO_PIN_5, // F -> PB5
+  GPIO_PIN_6  // G -> PB6
+};
+
+s8 KeyPressed = -1;
+
+void CKCU_Configuration(void)
+{
+  CKCU_PeripClockConfig_TypeDef CKCUClock = {{0}};
+  CKCUClock.Bit.PA   = 1;
+  CKCUClock.Bit.PB   = 1; // Enable GPIOB clock for the 7-segment display
+  CKCUClock.Bit.AFIO = 1;
+  CKCU_PeripClockConfig(CKCUClock, ENABLE);
+}
+
+void Hardware_Init(void)
+{
+  u8 i;
+
+  /* 1. Initialize 4x4 Keypad Matrix Output Pins (PA4~PA7) */
+  for (i = 0; i < 4; i++)
+  {
+    AFIO_GPxConfig(GPIO_PA, OutputPins[i], AFIO_FUN_GPIO);
+    GPIO_DirectionConfig(HT_GPIOA, OutputPins[i], GPIO_DIR_OUT);
+    GPIO_WriteOutBits(HT_GPIOA, OutputPins[i], RESET);
+  }
+
+  /* 2. Initialize 4x4 Keypad Matrix Input Pins (PA0~PA3) with Internal Pull-Down Resistors */
+  for (i = 0; i < 4; i++)
+  {
+    AFIO_GPxConfig(GPIO_PA, InputPins[i], AFIO_FUN_GPIO);
+    GPIO_DirectionConfig(HT_GPIOA, InputPins[i], GPIO_DIR_IN);
+    GPIO_PullResistorConfig(HT_GPIOA, InputPins[i], GPIO_PR_DOWN);
+    GPIO_InputConfig(HT_GPIOA, InputPins[i], ENABLE);
+  }
+
+  /* 3. Initialize 7-Segment Display Pins (PB0 ~ PB6) as Outputs */
+  for (i = 0; i < 7; i++)
+  {
+    AFIO_GPxConfig(GPIO_PB, SegPins[i], AFIO_FUN_GPIO);
+    GPIO_DirectionConfig(HT_GPIOB, SegPins[i], GPIO_DIR_OUT);
+    GPIO_WriteOutBits(HT_GPIOB, SegPins[i], RESET); // Default state: all segments off
+  }
+}
+
+/* 4x4 Keypad Matrix Scanning Function */
+s8 Keypad_Scan(void)
+{
+  u8 out_idx, in_idx, i;
+  for (out_idx = 0; out_idx < 4; out_idx++)
+  {
+    for (i = 0; i < 4; i++)
+    {
+      GPIO_WriteOutBits(HT_GPIOA, OutputPins[i], RESET);
+    }
+
+    GPIO_WriteOutBits(HT_GPIOA, OutputPins[out_idx], SET);
+
+    for (in_idx = 0; in_idx < 4; in_idx++)
+    {
+      if (GPIO_ReadInBit(HT_GPIOA, InputPins[in_idx]) == SET)
+      {
+        return (out_idx * 4 + in_idx); // Return key index 0 ~ 15
+      }
+    }
+  }
+
+  return -1; // Return -1 if no key is pressed
+}
+
+/* Control 7-Segment Display Patterns Based on Key Index */
+void Display_Pattern(s8 key)
+{
+  u8 i;
+
+  /* Step 1: Clear all 7-segment display outputs (turn all segments off) */
+  for (i = 0; i < 7; i++)
+  {
+    GPIO_WriteOutBits(HT_GPIOB, SegPins[i], RESET);
+  }
+
+  /* Step 2: Light up specific segments according to the rules (A=0, B=1, C=2, D=3, E=4, F=5, G=6) */
+  switch (key)
+  {
+    case 0: // Output ABCFE -> Light up A(0), B(1), C(2), F(5), E(4)
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_0, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_1, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_2, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_4, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_5, SET);
+      break;
+
+    case 1: // Output AFED -> Light up A(0), F(5), E(4), D(3)
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_0, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_3, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_4, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_5, SET);
+      break;
+
+    case 2: // Output ABCD -> Light up A(0), B(1), C(2), D(3)
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_0, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_1, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_2, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_3, SET);
+      break;
+
+    case 3: // Output BCDEF -> Light up B(1), C(2), D(3), E(4), F(5)
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_1, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_2, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_3, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_4, SET);
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_5, SET);
+      break;
+
+    case 4: // Output G -> Light up G(6)
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_6, SET);
+      break;
+
+    default:
+      // Other keys (5~15) maintain full blackout (segments are already cleared above)
+      break;
+  }
+}
+
+int main(void)
+{
+  CKCU_Configuration();
+  Hardware_Init();
+
+  while (1)
+  {
+    KeyPressed = Keypad_Scan();  // Continuously scan the keypad matrix
+
+    if (KeyPressed >= 0 && KeyPressed <= 4)
+    {
+      Display_Pattern(KeyPressed); // Display corresponding pattern for keys 0~4
+    }
+    else
+    {
+      // Turn off all segments of the 7-segment display when no key is pressed (-1) or for other keys (5~15)
+      u8 i;
+      for (i = 0; i < 7; i++)
+      {
+        GPIO_WriteOutBits(HT_GPIOB, SegPins[i], RESET);
+      }
+    }
+  }
+}
