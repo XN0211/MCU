@@ -1,0 +1,265 @@
+/*********************************************************************************************************//**
+ * @file  ADC/Continuous_Potentiometer/main.c
+ * @version $Rev:: 4646         $
+ * @date  $Date:: 2020-03-04 #$
+ * @brief Main program.
+ *************************************************************************************************************
+ * @attention
+ *
+ * Firmware Disclaimer Information
+ *
+ * 1. The customer hereby acknowledges and agrees that the program technical documentation, including the
+ *    code, which is supplied by Holtek Semiconductor Inc., (hereinafter referred to as "HOLTEK") is the
+ *    proprietary and confidential intellectual property of HOLTEK, and is protected by copyright law and
+ *    other intellectual property laws.
+ *
+ * 2. The customer hereby acknowledges and agrees that the program technical documentation, including the
+ *    code, is confidential information belonging to HOLTEK, and must not be disclosed to any third parties
+ *    other than HOLTEK and the customer.
+ *
+ * 3. The program technical documentation, including the code, is provided "as is" and for customer reference
+ *    only. After delivery by HOLTEK, the customer shall use the program technical documentation, including
+ *    the code, at their own risk. HOLTEK disclaims any expressed, implied or statutory warranties, including
+ *    the warranties of merchantability, satisfactory quality and fitness for a particular purpose.
+ *
+ * <h2><center>Copyright (C) Holtek Semiconductor Inc. All rights reserved</center></h2>
+ ************************************************************************************************************/
+
+/* Includes ------------------------------------------------------------------------------------------------*/
+#include "ht32.h"
+#include "ht32_board.h"
+#include "ht32_board_config.h"
+
+/* Private function prototypes -----------------------------------------------------------------------------*/
+void ADC_Configuration(void);
+void SevenSegment_Configuration(void);
+void Display_Digit(u8 digit);
+void All_Digits_Off(void);
+void Scan_Delay(void);
+
+/* Global variables ----------------------------------------------------------------------------------------*/
+volatile bool gADC_SingleEndOfConversion;
+vu32 gPotentiometerLevel;
+
+/* Global functions ----------------------------------------------------------------------------------------*/
+/*********************************************************************************************************//**
+ * @brief   Main program.
+ * @retval None
+ ************************************************************************************************************/
+int main(void)
+{
+  RETARGET_Configuration();
+  ADC_Configuration();
+  SevenSegment_Configuration(); // ??? PB0~PB6 (??) ? PA1~PA4 (??)
+
+  /* Enable ADC */
+  ADC_Cmd(HTCFG_ADC_PORT, ENABLE);
+
+  /* Software trigger to start ADC conversion */
+  ADC_SoftwareStartConvCmd(HTCFG_ADC_PORT, ENABLE);
+
+  u8 display_digit = 0; // ??????? (0 ~ 3)
+
+  while (1)
+  {
+    // ?????
+    if(HT_CKCU->APBCCR1 & (1 << 4))
+        WDT_Restart();
+
+    // ? ADC ?????????
+    if (gADC_SingleEndOfConversion)
+    {
+      gADC_SingleEndOfConversion = FALSE;  
+      printf("\rPotentiometer level is %04d", (int)gPotentiometerLevel);
+    }
+
+    // ? ADC ??????(0 ~ 4095)???????????
+    u32 val = gPotentiometerLevel;
+    u8 thousands = val / 1000;
+    u8 hundreds  = (val / 100) % 10;
+    u8 tens      = (val / 10) % 10;
+    u8 units     = val % 10;
+
+    // ????(?????? 4 ???)
+    All_Digits_Off(); // ????????????
+
+    switch (display_digit)
+    {
+        case 0: // ?? (PA1)
+            Display_Digit(thousands);
+            GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_1, 1);
+            break;
+        case 1: // ?? (PA2)
+            Display_Digit(hundreds);
+            GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_2, 1);
+            break;
+        case 2: // ?? (PA3)
+            Display_Digit(tens);
+            GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_3, 1);
+            break;
+        case 3: // ?? (PA4)
+            Display_Digit(units);
+            GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_4, 1);
+            break;
+    }
+
+    display_digit = (display_digit + 1) % 4; // ???? 0 ~ 3
+    Scan_Delay(); // ????????????
+  }
+}
+
+/*********************************************************************************************************//**
+ * @brief   ADC Configuration.
+ * @retval None
+ ************************************************************************************************************/
+void ADC_Configuration(void)
+{
+  { /* Enable peripheral clock */
+    CKCU_PeripClockConfig_TypeDef CKCUClock = {{ 0 }};
+    CKCUClock.Bit.AFIO = 1;
+    CKCUClock.Bit.HTCFG_ADC_IPN = 1;
+    CKCU_PeripClockConfig(CKCUClock, ENABLE);
+  }
+
+  /* Configure AFIO mode as ADC function */
+  AFIO_GPxConfig(HTCFG_VR_GPIO_ID, HTCFG_VR_AFIO_PIN, HTCFG_ADC_AFIO_MODE);
+
+  { /* ADC related settings */
+    CKCU_SetADCnPrescaler(HTCFG_ADC_CKCU_ADCPRE, CKCU_ADCPRE_DIV64);
+    ADC_RegularGroupConfig(HTCFG_ADC_PORT, CONTINUOUS_MODE, 1, 0);
+
+    #if (LIBCFG_ADC_SAMPLE_TIME_BY_CH)
+    // The sampling time is set by the last parameter of the function "ADC_RegularChannelConfig()".
+    #else
+    ADC_SamplingTimeConfig(HTCFG_ADC_PORT, 0);
+    #endif
+
+    ADC_RegularChannelConfig(HTCFG_ADC_PORT, HTCFG_VR_ADC_CH, 0, 0);
+    ADC_RegularTrigConfig(HTCFG_ADC_PORT, ADC_TRIG_SOFTWARE);
+  }
+
+  ADC_IntConfig(HTCFG_ADC_PORT, ADC_INT_SINGLE_EOC, ENABLE);
+  NVIC_EnableIRQ(HTCFG_ADC_IRQn);
+}
+
+/*********************************************************************************************************//**
+ * @brief   Seven Segment Display Configuration (PB0 ~ PB6 for a ~ g, PA1 ~ PA4 for digits).
+ * @retval None
+ ************************************************************************************************************/
+void SevenSegment_Configuration(void)
+{
+  CKCU_PeripClockConfig_TypeDef CKCUClock = {{ 0 }};
+  CKCUClock.Bit.PB = 1;
+  CKCUClock.Bit.PA = 1; // ?? PA ??????? PA1~PA4
+  CKCU_PeripClockConfig(CKCUClock, ENABLE);
+
+  /* ?? PB0 ~ PB6 ??? (?? a~g) */
+  GPIO_DirectionConfig(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | 
+                                 GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | 
+                                 GPIO_PIN_6, GPIO_DIR_OUT);
+
+  /* ?? PA1 ~ PA4 ??? (?? 1~4) */
+  GPIO_DirectionConfig(HT_GPIOA, GPIO_PIN_1 | GPIO_PIN_2 | 
+                                 GPIO_PIN_3 | GPIO_PIN_4, GPIO_DIR_OUT);
+}
+
+/*********************************************************************************************************//**
+ * @brief   ???????????
+ * @retval None
+ ************************************************************************************************************/
+void All_Digits_Off(void)
+{
+  GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_1, 0);
+  GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_2, 0);
+  GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_3, 0);
+  GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_4, 0);
+}
+
+/*********************************************************************************************************//**
+ * @brief   ????????????
+ * @retval None
+ ************************************************************************************************************/
+void Scan_Delay(void)
+{
+  volatile u32 i = 1500; // ???????????
+  while (i--);
+}
+
+/*********************************************************************************************************//**
+ * @brief   Display digit (0 ~ 9) using explicit Set / Clear logic for PB0~PB6 (a~g).
+ * @param   digit: 0 to 9
+ * @retval None
+ ************************************************************************************************************/
+void Display_Digit(u8 digit)
+{
+  switch (digit)
+  {
+    case 0:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_6);
+      break;
+
+    case 1:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_1 | GPIO_PIN_2);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6);
+      break;
+
+    case 2:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_6);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_2 | GPIO_PIN_5);
+      break;
+
+    case 3:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_6);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_4 | GPIO_PIN_5);
+      break;
+
+    case 4:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_5 | GPIO_PIN_6);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_3 | GPIO_PIN_4);
+      break;
+
+    case 5:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_5 | GPIO_PIN_6);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_1 | GPIO_PIN_4);
+      break;
+
+    case 6:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_1);
+      break;
+
+    case 7:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6);
+      break;
+
+    case 8:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6);
+      break;
+
+    case 9:
+      GPIO_SetOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_5 | GPIO_PIN_6);
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_4);
+      break;
+
+    default:
+      GPIO_ClearOutBits(HT_GPIOB, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6);
+      break;
+  }
+}
+
+#if (HT32_LIB_DEBUG == 1)
+/*********************************************************************************************************//**
+ * @brief   Report both the error name of the source file and the source line number.
+ * @param   filename: pointer to the source file name.
+ * @param   uline: error line source number.
+ * @retval None
+ ************************************************************************************************************/
+void assert_error(u8* filename, u32 uline)
+{
+  while (1)
+  {
+    }
+}
+#endif
