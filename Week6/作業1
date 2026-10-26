@@ -1,0 +1,101 @@
+#include "ht32.h"
+#include "GPIO.h"
+#include "BFTM0.h"
+
+void Seg_Display(u32 number);
+void _delay(vu32 count);
+
+const u8 SegTable[10][7] =
+	{
+    { 1, 1, 1, 1, 1, 1, 0 },  // 0
+    { 0, 1, 1, 0, 0, 0, 0 },  // 1
+    { 1, 1, 0, 1, 1, 0, 1 },  // 2
+    { 1, 1, 1, 1, 0, 0, 1 },  // 3
+    { 0, 1, 1, 0, 0, 1, 1 },  // 4
+    { 1, 0, 1, 1, 0, 1, 1 },  // 5
+    { 1, 0, 1, 1, 1, 1, 1 },  // 6
+    { 1, 1, 1, 0, 0, 0, 0 },  // 7
+    { 1, 1, 1, 1, 1, 1, 1 },  // 8
+    { 1, 1, 1, 1, 0, 1, 1 }   // 9
+	};
+
+void Seg_Display(u32 number)
+{
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_1, SegTable[number][0]); // A
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_2, SegTable[number][1]); // B
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_3, SegTable[number][2]); // C
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_4, SegTable[number][3]); // D
+    GPIO_WriteOutBits(HT_GPIOC, GPIO_PIN_4, SegTable[number][4]); // E
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_6, SegTable[number][5]); // F
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_7, SegTable[number][6]); // G
+		_delay(10);
+}
+//-----------------------------------------------------------------------------
+int main(void)
+{
+	int num=0;
+	int num1,num2,num3,num4;
+  #if (HTCFG_STACK_USAGE_ANALYSIS == 1)
+  /* !!! NOTICE !!!
+     Please update the Keil HT32 PACK and HT32 Firmware Library to the latest version to make sure the
+     Stack Usage Analysis function works properly.
+  */
+  /*
+    Set HTCFG_STACK_USAGE_ANALYSIS as 1 in the "ht32xxxxxx_conf.h" to enaDble Stack Usage Analysis feature.
+    This feature is only applicable to the Keil MDK-ARM. Please call the "StackUsageAnalysisInit()" function
+    in the begin of the "main()".
+    The "StackUsageAnalysisInit()" parameter shall be the start address of the vector table.
+    Under Keil Debug mode, tick "View > Watch Window > HT32 Stack Usage Analysis" to show the stack usage
+    information. Those information is only valid after calling "StackUsageAnalysisInit()" function.
+  */
+  StackUsageAnalysisInit(0);
+  #endif
+
+  GPIO_Configuration();
+  BFTM0_Configuration();
+
+  while (1)
+  {
+    if(HT_CKCU->APBCCR1 & (1 << 4))
+      WDT_Restart();
+    if(bftm0_ct >= 10)
+    {
+      bftm0_ct = 0;
+			num++;
+			if (num>=2000)
+				num=0;
+			num1=num/1000;
+			num2=num/100%10;
+			num3=num/10%10;
+			num4=num%10;
+
+      GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_0,1);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_1,0);
+      GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_2,0);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_3,0);
+			Seg_Display(num4);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_0,0);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_1,1);
+      GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_2,0);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_3,0);
+			Seg_Display(num3);
+      GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_0,0);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_1,0);
+      GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_2,1);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_3,0);
+			Seg_Display(num2);
+      GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_0,0);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_1,0);
+      GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_2,0);
+			GPIO_WriteOutBits(HT_GPIOD,GPIO_PIN_3,1);
+			Seg_Display(num1);
+    }
+  }
+}
+void _delay(vu32 count)
+{
+	int i;
+	for (i=0;i<1000*count;i++)
+	{
+	}
+}
