@@ -1,0 +1,82 @@
+#include "ht32.h"
+#include "GPIO.h"
+#include "BFTM0.h"
+#include "EXTI.h"
+#include "GPTM0.h"
+
+// 宣告 buzz 函式（定義在下方）
+void buzz(uint8_t enable, uint32_t duration_ms, uint32_t frequency);
+
+// 自己的歌曲頻率 (Hz)
+int song_frequency[] = {
+    440, 440, 440, 349, 523, 440, 349, 523, 440,
+    659, 659, 659, 698, 523, 415, 349, 523, 440
+};
+
+// 自己的歌曲持續時間 (ms)
+int song_duration[] = {
+    500, 500, 500, 350, 150, 500, 350, 150, 1000,
+    500, 500, 500, 350, 150, 500, 350, 150, 1000
+};
+
+int main(void)
+{
+    int i = 0;
+    int count = sizeof(song_frequency) / sizeof(song_frequency[0]);
+
+  #if (HTCFG_STACK_USAGE_ANALYSIS == 1)
+  StackUsageAnalysisInit(0);
+  #endif
+
+  GPIO_Configuration();
+  BFTM0_Configuration();
+  EXTI_Configuration();
+  GPTM0_Configuration();
+
+  while (1)
+  {
+    if(HT_CKCU->APBCCR1 & (1 << 4))
+        WDT_Restart();
+        
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_1, 0);
+
+    // 循環播放自己的歌曲
+    for (i = 0; i < count; i++)
+    {
+        buzz(1, song_duration[i], song_frequency[i]);
+        buzz(0, 30, 0); // 音符間的短暫停頓
+    }
+  }
+}
+
+void buzz(uint8_t enable, uint32_t duration_ms, uint32_t frequency)
+{
+    uint32_t elapsed = 0;
+    
+    if (enable && frequency != 0)
+    {
+        GPTM0_SetFrequency(frequency);
+        GPTM0_CH3_SetOnduty(50);
+        GPTM0_CH3_EnablePWMOutput();
+    }
+    else
+    {
+        GPTM0_CH3_SetOnduty(0);
+        GPTM0_CH3_DisablePWMOutput(0);
+    }
+
+    bftm0_ct = 0;
+
+    while (elapsed < duration_ms)
+    {
+        while (bftm0_ct < 1)
+        {
+            if (HT_CKCU->APBCCR1 & (1 << 4))
+                WDT_Restart();
+        }
+        elapsed++;
+        bftm0_ct = 0;
+    }
+    GPTM0_CH3_SetOnduty(0);
+    GPTM0_CH3_DisablePWMOutput(0);
+}
