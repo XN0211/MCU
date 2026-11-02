@@ -1,0 +1,91 @@
+#include "ht32.h"
+#include "BFTM0.h"
+#include "GPTM0.h"
+
+void buzz(uint8_t enable, uint32_t duration_ms, uint32_t frequency);
+
+// ?????????? (Hz)
+int song_frequency[] = {
+    // ???? 6 ???
+    660, 660, 0, 660, 0, 523, 660, 0, 784, 0, 392, 0,
+    
+    // ???????
+    523, 0, 392, 0, 330, 0, 440, 494, 466, 440,
+    0, 392, 660, 784, 880, 698, 784, 0, 660, 523, 587, 494,
+    
+    // ??????? (????)
+    523, 0, 392, 0, 330, 0, 440, 494, 466, 440,
+    0, 392, 660, 784, 880, 698, 784, 0, 660, 523, 587, 494
+};
+
+// ????????? (??)
+int song_duration[] = {
+    // ???? (?? ? ? ?)
+    150, 150, 100, 150, 100, 150, 150, 100, 300, 300, 300, 300,
+    
+    // ??????
+    250, 100, 250, 100, 250, 100, 200, 200, 150, 200,
+    100, 200, 200, 200, 200, 150, 150, 100, 200, 200, 200, 250,
+    
+    // ??????
+    250, 100, 250, 100, 250, 100, 200, 200, 150, 200,
+    100, 200, 200, 200, 200, 150, 150, 100, 200, 200, 200, 250
+};
+
+int main(void)
+{
+    int i = 0;
+    int count = sizeof(song_frequency) / sizeof(song_frequency[0]);
+    
+  #if (HTCFG_STACK_USAGE_ANALYSIS == 1)
+  StackUsageAnalysisInit(0);
+  #endif
+
+  BFTM0_Configuration();
+  GPTM0_Configuration();
+
+  //TM_Cmd(HT_GPTM0, ENABLE);
+
+  while (1)
+  {
+    if(HT_CKCU->APBCCR1 & (1 << 4))
+        WDT_Restart();
+        
+    // ??????
+    for (i = 0; i < count; i++)
+    {
+        // ???????
+        buzz(1, song_duration[i], song_frequency[i]);
+        
+        // ????????? (30ms) ??????
+        buzz(0, 30, 0); 
+    }
+    
+  }
+}
+
+void buzz(uint8_t enable, uint32_t duration_ms, uint32_t frequency)
+{
+    if (enable == 0 || frequency == 0)
+    {
+        GPTM0_CH3_SetOnduty(0);
+        GPTM0_CH3_DisablePWMOutput(0);
+    }
+    else
+    {
+        GPTM0_CH3_EnablePWMOutput();
+        GPTM0_SetFrequency(frequency);
+        GPTM0_CH3_SetOnduty(50);
+    }
+    bftm0_ct = 0;
+
+    while (bftm0_ct < duration_ms)
+    {
+       
+    }
+    if (enable != 0 && frequency != 0)
+    {
+        GPTM0_CH3_SetOnduty(0);
+        GPTM0_CH3_DisablePWMOutput(0);
+    }
+}
