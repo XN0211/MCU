@@ -1,1 +1,98 @@
-000
+/************************************************************************************************************
+ * HT32 微處理機實習 | 期中考前練習題：按鈕控制 LED 閃爍模式
+ ************************************************************************************************************/
+
+#include "ht32.h"
+#include "GPIO.h"
+#include "BFTM0.h"
+
+void _delay(vu32 count);
+
+int mode = 0;           // 0: 模式 A (亮1秒/滅1秒), 1: 模式 B (亮0.2秒/滅0.2秒)
+int led_state = 0;      // 0: 熄滅, 1: 點亮
+u32 flash_counter = 0;  // 累加 BFTM0 的 1ms 時間計數
+
+int main(void)
+{
+    #if (HTCFG_STACK_USAGE_ANALYSIS == 1)
+    StackUsageAnalysisInit(0);
+    #endif
+
+    // 初始化硬體 (由 CodeConfig 產生)
+    GPIO_Configuration();
+    BFTM0_Configuration();
+
+    // 如果按鈕共用端或接地設在 PB0，可先輸出低電位 (若板子不需要可忽略)
+    GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_0, 0);
+
+    bftm0_ct = 0;
+    flash_counter = 0;
+
+    while (1)
+    {
+        // 看門狗重置
+        if(HT_CKCU->APBCCR1 & (1 << 4))
+            WDT_Restart();
+
+        // 1. 累積 BFTM0 的 1ms 時間
+        if (bftm0_ct >= 1)
+        {
+            bftm0_ct = 0;
+            flash_counter++;
+        }
+
+        // 2. 按鈕偵測與消彈跳 (假設按鈕接在 PB1，按下為低電位 RESET)
+        if (GPIO_ReadInBit(HT_GPIOB, GPIO_PIN_1) == RESET)
+        {
+            _delay(20); // 簡易軟體消彈跳
+            if (GPIO_ReadInBit(HT_GPIOB, GPIO_PIN_1) == RESET)
+            {
+                // 切換模式 (0 <-> 1)
+                mode = !mode;
+               
+                // 重置計數與狀態，讓切換後立刻重新計時
+                flash_counter = 0;
+                led_state = 1;
+                GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_0, 1); // 假設 LED 接在 PA0
+
+                // 等待按鈕放開，避免按住不放時連續觸發
+                while (GPIO_ReadInBit(HT_GPIOB, GPIO_PIN_1) == RESET)
+                {
+                    if(HT_CKCU->APBCCR1 & (1 << 4))
+                        WDT_Restart();
+                }
+            }
+        }
+
+        // 3. 根據目前模式控制 LED 閃爍頻率
+        if (mode == 0)
+        {
+            // 模式 A：亮 1 秒 (1000ms)、滅 1 秒 (1000ms)
+            if (flash_counter >= 1000)
+            {
+                flash_counter = 0;
+                led_state = !led_state;
+                GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_0, led_state);
+            }
+        }
+        else
+        {
+            // 模式 B：亮 0.2 秒 (200ms)、滅 0.2 秒 (200ms)
+            if (flash_counter >= 200)
+            {
+                flash_counter = 0;
+                led_state = !led_state;
+                GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_0, led_state);
+            }
+        }
+    }
+}
+
+// 軟體延遲函式 (供按鈕消彈跳使用)
+void _delay(vu32 count)
+{
+    vu32 i = 5000;
+    for (i *= count; i > 0; i--)
+    {
+    }
+}
