@@ -1,0 +1,54 @@
+#include "ht32.h"
+#include "BFTM0.h"
+#include "ADC.h"
+#include "USART0.h"
+
+void delay_ms(u32 ms);
+
+int main(void)
+{
+    #if (HTCFG_STACK_USAGE_ANALYSIS == 1)
+    StackUsageAnalysisInit(0);
+    #endif
+    
+    BFTM0_Configuration();
+    ADC_Configuration();     // ??? ADC(?????? 0 ~ 4095)
+    USART0_Configuration();  // ?????? (PA8: TX, PA10: RX)
+    
+    u16 adc_val = 0;
+    u8 packet[2];            
+    
+    while (1)
+    {
+        if(HT_CKCU->APBCCR1 & (1 << 4))
+            WDT_Restart();
+        
+        // 1. ?? ADC ???? (12-bit)
+        adc_val = adc_result[0];  
+        
+        // 2. 12-bit ?????
+        u8 high_6bit = (adc_val >> 6) & 0x3F; 
+        u8 low_6bit  = adc_val & 0x3F;        
+        
+        packet[0] = 0x40 | high_6bit; // ???????: 01hhhhhh
+        packet[1] = 0x80 | low_6bit;  // ???????: 10llllll
+        
+        // 3. ?? UART (PA8) ??? Device B
+        USART0_tx_data(packet, 2);
+        
+        // 4. ?????? (? 0.5 ?)
+        bftm0_ct = 0;
+        while(bftm0_ct < 500)
+        {
+        }
+    }
+}
+
+void delay_ms(u32 ms)
+{
+    volatile u32 i, j;
+    for (i = 0; i < ms; i++)
+    {
+        for (j = 0; j < 1000; j++);
+    }
+}
