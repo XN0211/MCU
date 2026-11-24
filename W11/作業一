@@ -1,0 +1,137 @@
+#include "ht32.h"
+#include "GPIO.h"
+#include "BFTM0.h"
+#include "SPI0.h"
+#include "GPTM0.h"
+#include "USART0.h"
+#include <stdio.h>
+#include <string.h>
+
+void Seg_Display(u32 number);
+void delay_ms(u32 ms);
+
+// 0~9 ???????? (A ~ G)
+const u8 SegTable[10][7] =
+{
+    { 1, 1, 1, 1, 1, 1, 0 },  // 0
+    { 0, 1, 1, 0, 0, 0, 0 },  // 1
+    { 1, 1, 0, 1, 1, 0, 1 },  // 2
+    { 1, 1, 1, 1, 0, 0, 1 },  // 3
+    { 0, 1, 1, 0, 0, 1, 1 },  // 4
+    { 1, 0, 1, 1, 0, 1, 1 },  // 5
+    { 1, 0, 1, 1, 1, 1, 1 },  // 6
+    { 1, 1, 1, 0, 0, 0, 0 },  // 7
+    { 1, 1, 1, 1, 1, 1, 1 },  // 8
+    { 1, 1, 1, 1, 0, 1, 1 }   // 9
+};
+
+void Seg_Display(u32 number)
+{
+    if (number > 9) number = 0;
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_1, SegTable[number][0]); // A
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_2, SegTable[number][1]); // B
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_3, SegTable[number][2]); // C
+    GPIO_WriteOutBits(HT_GPIOC, GPIO_PIN_4, SegTable[number][3]); // D
+    GPIO_WriteOutBits(HT_GPIOC, GPIO_PIN_5, SegTable[number][4]); // E
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_6, SegTable[number][5]); // F
+    GPIO_WriteOutBits(HT_GPIOA, GPIO_PIN_7, SegTable[number][6]); // G
+}
+
+u8 readbuffer[2];
+u16 x;
+s16 temp;
+float temp_f;
+
+int left_count = 0;   // ???
+int right_count = 0;  // ???
+int scan_select = 0;  // 0: ??(PB0), 1: ??(PB1)
+int duty = 0;
+char uart_str[40];
+
+//-----------------------------------------------------------------------------
+int main(void)
+{
+  #if (HTCFG_STACK_USAGE_ANALYSIS == 1)
+  StackUsageAnalysisInit(0);
+  #endif
+
+  GPIO_Configuration();
+  BFTM0_Configuration();
+  SPI0_Configuration();
+  GPTM0_Configuration();
+  USART0_Configuration();
+
+  while (1)
+  {
+    if(HT_CKCU->APBCCR1 & (1 << 4))
+      WDT_Restart();
+
+    // 1. ?? TC77 ??
+    SPI0_MASTER_Read(readbuffer, 2);
+    x = ((u16)readbuffer[0] << 8) | readbuffer[1];
+    temp = (s16)x >> 3;
+    temp_f = (float)temp / 16.0f;
+
+    // 2. ????:25 > ?? >= 24(?? < 24)? LED ??;>= 25 ???????
+    if (temp_f < 25.0f)
+    {
+      duty = 0;
+    }
+    else
+    {
+      duty = (int)((temp_f - 25.0f) * 10.0f) + 10; // 25°C ?? 10%,?? 1°C ?? 10%
+      if (duty > 100)
+        duty = 100;
+    }
+    GPTM0_CH3_SetOnduty(duty);
+
+    // 3. ???????????????(?? 24 -> left=2, right=4)
+    if (temp_f < 0.0f)
+    {
+      left_count = 0;
+      right_count = 0;
+    }
+    else
+    {
+      int t_int = (int)temp_f;
+      left_count = (t_int / 10) % 10;
+      right_count = t_int % 10;
+    }
+
+    // 4. ????????? (PB0 / PB1)
+    if (scan_select == 0)
+    {
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_1, SET);   // ??? PB1
+      Seg_Display(right_count);                      // ???
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_0, RESET); // ??? PB0
+      scan_select = 1;
+    }
+    else
+    {
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_0, SET);   // ??? PB0
+      Seg_Display(left_count);                       // ???
+      GPIO_WriteOutBits(HT_GPIOB, GPIO_PIN_1, RESET); // ??? PB1
+      scan_select = 0;
+    }
+
+    // 5. ??????? PWM ???? Tera Term
+    if (bftm0_ct >= 500)
+    {
+      bftm0_ct = 0;
+      sprintf(uart_str, "Temp: %.2f C | Duty: %d%%\r\n", temp_f, duty);
+      USART0_tx_data((u8 *)uart_str, strlen(uart_str));
+    }
+
+    delay_ms(3);
+  }
+}
+
+//-----------------------------------------------------------------------------
+void delay_ms(u32 ms)
+{
+    volatile u32 i, j;
+    for (i = 0; i < ms; i++)
+    {
+        for (j = 0; j < 1000; j++);
+    }
+}
